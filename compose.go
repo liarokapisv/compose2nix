@@ -672,6 +672,26 @@ func (g *Generator) buildNixContainer(service types.ServiceConfig, networkMap ma
 		c.ExtraOptions = append(c.ExtraOptions, "--hostname="+service.Hostname)
 	}
 
+	// https://docs.docker.com/compose/compose-file/05-services/#ipc
+	// https://docs.docker.com/engine/reference/run/#ipc-settings---ipc
+	// https://docs.podman.io/en/latest/markdown/podman-run.1.html#ipc-ipc
+	if ipc := strings.TrimSpace(service.Ipc); ipc != "" {
+		if strings.HasPrefix(ipc, "service:") {
+			// Convert the Compose "service" IPC mode to a "container" IPC mode.
+			targetService := strings.Split(ipc, ":")[1]
+			targetContainerName, ok := g.serviceToContainerName[targetService]
+			if !ok {
+				return nil, fmt.Errorf("ipc for service %q refers to a non-existent service %q", service.Name, targetService)
+			}
+			c.ExtraOptions = append(c.ExtraOptions, "--ipc=container:"+targetContainerName)
+			if !slices.Contains(c.DependsOn, targetContainerName) {
+				c.DependsOn = append(c.DependsOn, targetContainerName)
+			}
+		} else {
+			c.ExtraOptions = append(c.ExtraOptions, "--ipc="+ipc)
+		}
+	}
+
 	// https://docs.docker.com/compose/compose-file/05-services/#sysctls
 	// https://docs.docker.com/engine/reference/commandline/run/#sysctl
 	// https://docs.podman.io/en/latest/markdown/podman-run.1.html#sysctl-name-value
